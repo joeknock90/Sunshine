@@ -5,6 +5,9 @@
 // standard includes
 #include <thread>
 
+// platform includes
+#include <drm_fourcc.h>
+
 // local includes
 #include "cuda.h"
 #include "src/logging.h"
@@ -151,6 +154,48 @@ namespace wl {
       }
 
       return platf::capture_e::ok;
+    }
+
+    bool is_hdr() override {
+      if (dmabuf.status != dmabuf_t::READY && dmabuf.status != dmabuf_t::WAITING) {
+        return false;
+      }
+
+      auto current_frame = dmabuf.current_frame;
+      if (!current_frame) return false;
+
+      auto fourcc = current_frame->sd.fourcc;
+      return fourcc == DRM_FORMAT_XBGR2101010 || fourcc == DRM_FORMAT_ABGR2101010 ||
+             fourcc == DRM_FORMAT_XRGB2101010 || fourcc == DRM_FORMAT_ARGB2101010 ||
+             fourcc == DRM_FORMAT_XBGR16161616F || fourcc == DRM_FORMAT_ABGR16161616F ||
+             fourcc == DRM_FORMAT_XRGB16161616F || fourcc == DRM_FORMAT_ARGB16161616F;
+    }
+
+    bool get_hdr_metadata(SS_HDR_METADATA &metadata) override {
+      if (!is_hdr()) {
+        return false;
+      }
+
+      // Report Rec 2020 primaries
+      metadata.displayPrimaries[0].x = 0.708f * 50000;
+      metadata.displayPrimaries[0].y = 0.292f * 50000;
+      metadata.displayPrimaries[1].x = 0.170f * 50000;
+      metadata.displayPrimaries[1].y = 0.797f * 50000;
+      metadata.displayPrimaries[2].x = 0.131f * 50000;
+      metadata.displayPrimaries[2].y = 0.046f * 50000;
+      metadata.whitePoint.x = 0.3127f * 50000;
+      metadata.whitePoint.y = 0.3290f * 50000;
+
+      // This is according to HDR10+ standards, should probably be based on actual data
+      metadata.maxDisplayLuminance = 4000;
+      metadata.minDisplayLuminance = 1;
+
+      // These are content-specific metadata parameters that this interface doesn't give us
+      metadata.maxContentLightLevel = 0;
+      metadata.maxFrameAverageLightLevel = 0;
+      metadata.maxFullFrameLuminance = 0;
+
+      return true;
     }
 
     platf::mem_type_e mem_type;
